@@ -10,6 +10,11 @@ pipeline {
     environment {
         DEBUG = 'true'
         appVersion= ''
+        region='us-east-1'
+        account_id= ''
+        project= 'expense'
+        environment='dev'
+        component= 'backend'
     }
 
     stages {
@@ -30,35 +35,32 @@ pipeline {
         }
         stage('Docker Build') {
             steps {
-                sh """
-                    docker build -t rajikakani412/backend:${appVersion} .
+                withAWS(region: 'us-east-1', credentials: 'aws-creds') {
+                    sh """
+                    aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${account_id}.dkr.ecr.us-east-1.amazonaws.com
+
+                    docker build -t ${account_id}.dkr.ecr.us-east-1.amazonaws.com/${project}/${environment}/${component}:${appVersion} .
+
                     docker images
-                """
+
+                    docker push ${account_id}.dkr.ecr.us-east-1.amazonaws.com/${project}/${environment}/${component}:${appVersion}
+                    """
+                }
             }
         }
-        // stage('PrintParams') {
-        //     steps{
-        //         echo "Hello ${params.PERSON}"
-        //         echo "Biography: ${params.BIOGRAPHY}"
-        //         echo "Toggle: ${params.TOGGLE}"
-        //         echo "Choice: ${params.CHOICE}"
-        //         echo "Password: ${params.PASSWORD}"
-        //     }
-        // }
-        // stage('approval'){
-        //     input {
-        //         message "Should we continue?"
-        //         ok "Yes, we should."
-        //         submitter "alice,bob"
-        //         parameters {
-        //             string(name: 'PERSON', defaultValue: 'Mr Jenkins', description: 'Who should I say hello to?')
-                
-        //         }
-        //     }    
-        //     steps {
-        //         echo "Hello, ${PERSON}, nice to meet you."
-        //     }
-        // }  
+        stage('Deploy'){
+            steps{
+                 withAWS(region: 'us-east-1', credentials: 'aws-creds') {
+                    sh """
+                        aws eks update-kubeconfig --region ${region} --name ${project}-${environment}
+                        cd helm
+                        sed -i 's/IMAGE_VERSION/${appVersion}/g' values-${environement}.yaml
+                        helm upgrade --install ${component} -n ${project} -f values-${environement}.yaml
+                    """
+                 }    
+            }
+        }
+        
     }
     post{
         always{
